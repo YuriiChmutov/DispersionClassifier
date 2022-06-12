@@ -9,6 +9,7 @@ from sklearn.cluster import SpectralClustering
 from sklearn.cluster import KMeans
 from sklearn.cluster import kmeans_plusplus
 from scipy.linalg import hadamard
+import itertools
 
 
 # to convert number to bit array 8 -> [0, 0, 0, 0, 1, 0, 0, 0]
@@ -45,6 +46,21 @@ def convert_32_descriptors_to_256_bit(descriptors):
     return result_matrix
 
 
+# convert bit representation of descriptor to integer.
+# it is enough to multiply each descriptor, which consists of a vector of 256 bit elements long, by the Hadamard matrix.
+# [0, 1, 1, 1, 0, 1, 1, ..., 1, 0] --> [132, 4, 14, -2, -8, -4, ..., 2, 2]
+def convert_bit_format_descriptors_to_integers_format(descriptors_bit_format):
+
+    # https://ru.wikipedia.org/wiki/%D0%9C%D0%B0%D1%82%D1%80%D0%B8%D1%86%D0%B0_%D0%90%D0%B4%D0%B0%D0%BC%D0%B0%D1%80%D0%B0
+    adamar_matrix = hadamard(256)
+    converted_descriptors = []
+    for i in range(len(descriptors_bit_format)):
+        # print(i)
+        converted_descriptors.append(converted_descriptor_by_adamar_matrix(descriptors_bit_format[i], adamar_matrix))
+    return converted_descriptors
+
+
+# multiplication of the vector representation of the descriptor by the Hadamard matrix
 def converted_descriptor_by_adamar_matrix(descriptor, adamar_matrix):
     result_array = []
     # for i in range(len(descriptor)):
@@ -58,59 +74,71 @@ def converted_descriptor_by_adamar_matrix(descriptor, adamar_matrix):
     return result_array
 
 
-def convert_descriptors_to_whole_numbers(descriptors_bit_format):
-    adamar_matrix = hadamard(256)
-    converted_descriptors = []
-    for i in range(len(descriptors_bit_format)):
-        # print(i)
-        converted_descriptors.append(converted_descriptor_by_adamar_matrix(descriptors_bit_format[i], adamar_matrix))
-    return converted_descriptors
+# def get_dispersion_for_etalon(etalon, index):
+#     sum_for_average = 0
+#     # average = 0
+#
+#     for j in range(len(etalon)): # range 1000
+#         sum_for_average = sum_for_average + etalon[j][index]
+#     average = sum_for_average / len(etalon)
+#
+#     sum = 0
+#     for j in range(len(etalon)):
+#          sum = sum + ((etalon[j][index] - average) ** 2)
+#
+#     res = sum / (len(etalon) - 1)
+#     return round(res, 2)
 
 
-def get_dispersion_for_etalon(etalon, index):
-    sum_for_average = 0
-    # average = 0
+# to calculate dispersion for each etalon's column
+def get_dispersion_for_etalon(etalons_descriptors, index, degree):
 
-    for j in range(len(etalon)): # range 1000
-        sum_for_average = sum_for_average + etalon[j][index]
-    average = sum_for_average / len(etalon)
-
-    sum = 0
-    for j in range(len(etalon)):
-         sum = sum + ((etalon[j][index] - average) ** 2)
-
-    res = sum / (len(etalon) - 1)
-    return round(res, 2)
-
-
-def get_dispersion_for_etalon(etalon, index, degree):
+    # each column of the etalon is taken.
     sum_for_average = 0
     average = 0
 
-    for j in range(len(etalon)): # range 1000
-        sum_for_average = sum_for_average + etalon[j][index]
-    average = sum_for_average / len(etalon)
+    # the average value of the column is calculated.
+    for j in range(len(etalons_descriptors)): # range 1000
+        sum_for_average = sum_for_average + etalons_descriptors[j][index]
+    average = sum_for_average / len(etalons_descriptors)
 
     sum = 0
-    if degree:
-        for j in range(len(etalon)):
-             sum = sum + (((etalon[j][index] ** 2) - (average ** 2)) ** 2)
-    else:
-        for j in range(len(etalon)):
-             sum = sum + ((etalon[j][index] - average) ** 2)
 
-    res = sum / (len(etalon) - 1)
+    #   The average value is subtracted from each element of the column.
+    #   The difference is squared. Each difference for each element is summed.
+    if degree:
+        for j in range(len(etalons_descriptors)):
+             sum = sum + (((etalons_descriptors[j][index] ** 2) - (average ** 2)) ** 2)
+    else:
+        for j in range(len(etalons_descriptors)):
+             sum = sum + ((etalons_descriptors[j][index] - average) ** 2)
+
+
+    res = sum / (len(etalons_descriptors) - 1)
     return round(res, 2)
 
 
-def get_list_of_dispersions(etalon, degree: bool):
+def get_list_of_dispersions(etalons_descriptors, degree: bool):
     list_of_dispersions = []
-    for i in range(len(etalon[0])):
-        list_of_dispersions.append(get_dispersion_for_etalon(etalon, i, degree))
+    # if I have 5 images -> I will have 2500 descriptors
 
+
+    # etalon looks like if it has 2500 descriptors:
+    # [0][0], [0][1], ..., [0][255]
+    # [1][0],
+    # ...
+    # ...
+    # [2499][0], ..., [2499][255]
+
+    # need to get dispersion for each column of etalon.
+    for i in range(len(etalons_descriptors[0])):
+        list_of_dispersions.append(get_dispersion_for_etalon(etalons_descriptors, i, degree))
+
+    # returns 256 dispersions
     return list_of_dispersions
 
 
+# To divide each element of list
 def divide_list_elements_by_number(list, number):
     divided_list = []
     for i in range(len(list)):
@@ -125,6 +153,8 @@ def convert_list_to_dictionary(list):
     return dictionary
 
 
+# Dictionary has key and value.
+# This method allows sort dictionary by value descending.
 def sort_dictionary_by_value(dictionary):
     # return {k: v for k, v in sorted(dictionary.items(), key=lambda item: item[1])}
     return dict(sorted(dictionary.items(), key=operator.itemgetter(1), reverse=True))
@@ -137,25 +167,54 @@ def write_dictionary_to_csv(dictionary, filename):
             writer.writerow([key, value])
 
 
-# TAKOMOTO
+# Look at the method description below.
+# This method executes the lower method for all template descriptors
+def cut_down_etalon_by_dispersions_indexes(descriptors, indexes):
+    shortcut_etalon = []
+    for i in range(len(descriptors)):
+        shortcut_etalon.append(cut_down_descriptor_by_dispersions_indexes(descriptors[i], indexes))
+    return shortcut_etalon
+
+
+# The descriptor consists of an array of 256 elements.
+# This method allows you to reduce the number of elements to 16
+# due to the fact that only certain elements remain, whose indices
+# were entered in the method parameters
+def cut_down_descriptor_by_dispersions_indexes(descriptor, indexes):
+    shortcut_descriptor = []  # len 16 will be
+    for i in range(16):
+        shortcut_descriptor.append(descriptor[indexes[i]])
+    return shortcut_descriptor
+
+
+# hausdorf
 
 # method returns minimum distance for one descriptor. Planning to compare
 # one with array of descriptors
-def get_minimum_distance_for_descriptor_among_many(descriptor, many):
-    min_distance = 256
-    for i in range(len(many)):
-        distance_between_descriptors = my_hamming_distance(descriptor, many[i])
-        if distance_between_descriptors < min_distance:
-            min_distance = distance_between_descriptors
-    return min_distance
+def get_minimum_distance_for_descriptor_among_many(descriptor, many, distance_type):
+    if distance_type == 'manhattan':
+        min_distance = 100000
+        for i in range(len(many)):
+            distance_between_descriptors = manhattan_distance(descriptor, many[i])
+            if distance_between_descriptors < min_distance:
+                min_distance = distance_between_descriptors
+        return min_distance
+
+    if distance_type == 'hamming':
+        min_distance = 256
+        for i in range(len(many)):
+            distance_between_descriptors = my_hamming_distance(descriptor, many[i])
+            if distance_between_descriptors < min_distance:
+                min_distance = distance_between_descriptors
+        return min_distance
 
 
 # method returns minimum distance for each descriptor from many_A.
 # compares each descriptors from many_A with all descriptors from many_B
-def get_minimum_distance_for_each_many_descriptors_among_many(many_A, many_B):
+def get_minimum_distance_for_each_many_descriptors_among_many(many_A, many_B, distance_type):
     array_of_min_distances = []
     for i in range(len(many_A)):
-        array_of_min_distances.append(get_minimum_distance_for_descriptor_among_many(many_A[i], many_B))
+        array_of_min_distances.append(get_minimum_distance_for_descriptor_among_many(many_A[i], many_B, distance_type))
     return array_of_min_distances
 
 
@@ -203,25 +262,60 @@ def my_hamming_distance(first_value, second_value):
     return float(len(first_value)) * distance.hamming(first_value, second_value)
 
 
-def get_distances_between_sets_by_takomoto(sets, names):
+def manhattan_distance(a, b):
+    return sum(abs(val1 - val2) for val1, val2 in zip(a, b))
+    # arr1 = np.array(a)
+    # arr2 = np.array(b)
+    # return np.sum(np.abs(arr1 - arr2))
+
+
+def get_distances_between_sets_by_hausdorf(sets, names, distance_type):
     dictionary = {} # A-B : 95
     i = 0
     while i < len(sets):
         j = i + 1
         while j < len(sets):
-            tempA = get_minimum_distance_for_each_many_descriptors_among_many(sets[i], sets[j])
+            tempA = get_minimum_distance_for_each_many_descriptors_among_many(sets[i], sets[j], distance_type)
             print(tempA)
-            tempB = get_minimum_distance_for_each_many_descriptors_among_many(sets[j], sets[i])
+            tempB = get_minimum_distance_for_each_many_descriptors_among_many(sets[j], sets[i], distance_type)
             print(tempB)
             max = get_maximum_between_two_arrays_of_minimums(tempA, tempB, names[i], names[j])
             dictionary[f'{names[i]} - {names[j]}'] = max
             j = j + 1
         i = i + 1
-
-    # for i in range(len(list)):
-    #     dictionary[i] = list[i]
-    # return dictionary
     return dictionary
+
+
+def get_index_of_closest_etalon_for_etalon(etalon, etalons_set, etalon_name, names, distance_type):
+    # if distance_type == 1:
+    list = []
+    for i in range(len(etalons_set)):
+        tempA = get_minimum_distance_for_each_many_descriptors_among_many(etalon, etalons_set[i], distance_type)
+        print(tempA)
+        tempB = get_minimum_distance_for_each_many_descriptors_among_many(etalons_set[i], etalon, distance_type)
+        print(tempB)
+        maximum = get_maximum_between_two_arrays_of_minimums(tempA, tempB, etalon_name, names[i])
+        print(f'{etalon_name} - {names[i]}: {maximum}')
+        list.append(maximum)
+    # test = min(dictionary, key=dictionary.get)
+    # print(type(min))
+    return list.index(min(list))
+
+
+def is_method_compare_correctly(etalons, names, method):
+    sum = 0
+    for i in range(len(etalons)):
+        index = get_index_of_closest_etalon_for_etalon(etalons[i], etalons, names[i], names, method)
+        print(f'Index of closest: {index}')
+        if index == i:
+            sum = sum + 1
+
+    if sum == len(etalons):
+        print(f'Method works correctly; {sum} / {len(etalons)}')
+        return True
+    else:
+        print(f'{sum} / {len(etalons)}')
+        return False
 
 
 def main():
@@ -252,33 +346,34 @@ def main():
     descriptors_etalon_D_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_D)
     descriptors_etalon_E_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_E)
 
+    descriptors_etalon_A_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_A_bit_format)
+    # descriptors_etalon_A_integers = convert_descriptors_to_whole_numbers(descriptors_etalon_B_side_bit_format)
+    descriptors_etalon_B_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_B_bit_format)
+    descriptors_etalon_C_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_C_bit_format)
+    descriptors_etalon_D_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_D_bit_format)
+    descriptors_etalon_E_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_E_bit_format)
 
-    descriptors_etalon_A_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_A_bit_format)
-    # descriptors_etalon_A_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_B_side_bit_format)
-    descriptors_etalon_B_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_B_bit_format)
-    descriptors_etalon_C_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_C_bit_format)
-    descriptors_etalon_D_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_D_bit_format)
-    descriptors_etalon_E_whole_numbers = convert_descriptors_to_whole_numbers(descriptors_etalon_E_bit_format)
 
+    descriptors_combined_etalon_integers = \
+        descriptors_etalon_A_integers + descriptors_etalon_B_integers +\
+        descriptors_etalon_C_integers + descriptors_etalon_D_integers +\
+        descriptors_etalon_E_integers
 
-    descriptors_combined_etalon_whole_numbers = \
-        descriptors_etalon_A_whole_numbers + descriptors_etalon_B_whole_numbers +\
-        descriptors_etalon_C_whole_numbers + descriptors_etalon_D_whole_numbers +\
-        descriptors_etalon_E_whole_numbers
-
-    print(f'Etalon len = {len(descriptors_combined_etalon_whole_numbers)}')
+    print(f'Etalon len = {len(descriptors_combined_etalon_integers)}')
     print()
 
-    # print(get_list_of_dispersions(descriptors_combined_etalon_whole_numbers))
+    # print(get_list_of_dispersions(descriptors_combined_etalon_integers))
 
-    list_of_dispersions = get_list_of_dispersions(descriptors_combined_etalon_whole_numbers, False)
+    list_of_dispersions = get_list_of_dispersions(descriptors_combined_etalon_integers, True)
     print(f'List of dispersions len = {len(list_of_dispersions)}')
     print(list_of_dispersions)
     print()
+
     max_dispersion = max(list_of_dispersions)
     list_of_dispersions_divided_by_max = divide_list_elements_by_number(list_of_dispersions, max_dispersion)
     # print(list_of_dispersions)
     print(list_of_dispersions_divided_by_max)
+
     dictionary_of_dispersions_divided_by_max = convert_list_to_dictionary(list_of_dispersions_divided_by_max)
     print(dictionary_of_dispersions_divided_by_max)
 
@@ -289,20 +384,27 @@ def main():
     # write_dictionary_to_csv(sorted_dictionary_of_dispersions_divided_by_max, 'с_квадратами')
 
     print()
+    top_16_sorted_dictionary_of_dispersions_divided_by_max = \
+        dict(itertools.islice(sorted_dictionary_of_dispersions_divided_by_max.items(), 16))
+
+    top_16_indexes = list(top_16_sorted_dictionary_of_dispersions_divided_by_max.keys())
+    print(top_16_indexes)
+
     print('-' * 100)
     print()
 
+    descriptors_etalon_A_integers_cut = \
+        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_A_integers, top_16_indexes)
+    descriptors_etalon_B_integers_cut = \
+        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_B_integers, top_16_indexes)
+    descriptors_etalon_C_integers_cut = \
+        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_C_integers, top_16_indexes)
+    descriptors_etalon_D_integers_cut = \
+        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_D_integers, top_16_indexes)
+    descriptors_etalon_E_integers_cut = \
+        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_E_integers, top_16_indexes)
 
-    # a_b = get_minimum_distance_for_each_many_descriptors_among_many(
-    #     descriptors_etalon_A_bit_format, descriptors_etalon_B_bit_format)
-    # b_a = get_minimum_distance_for_each_many_descriptors_among_many(
-    #     descriptors_etalon_B_bit_format, descriptors_etalon_A_bit_format)
-    #
-    # print(a_b)
-    # print(b_a)
-    # print(get_maximum_between_two_arrays_of_minimums(a_b, b_a))
-
-    sets = [
+    set_bits = [
         descriptors_etalon_A_bit_format,
         descriptors_etalon_B_bit_format,
         descriptors_etalon_C_bit_format,
@@ -310,33 +412,56 @@ def main():
         descriptors_etalon_E_bit_format
     ]
 
+    set_integers = [
+        descriptors_etalon_A_integers,
+        descriptors_etalon_B_integers,
+        descriptors_etalon_C_integers,
+        descriptors_etalon_D_integers,
+        descriptors_etalon_E_integers
+    ]
+
+    set_integers_cut = [
+        descriptors_etalon_A_integers_cut,
+        descriptors_etalon_B_integers_cut,
+        descriptors_etalon_C_integers_cut,
+        descriptors_etalon_D_integers_cut,
+        descriptors_etalon_E_integers_cut
+    ]
+
     names = ["A", "B", "C", "D", "E"]
+    test_names = ["A", "B"]
 
-    res = get_distances_between_sets_by_takomoto(sets, names)
-    print(res)
-
-
-
-    # print(len(descriptors_etalon_A_whole_numbers))
-    # print(descriptors_etalon_A_whole_numbers[0])
-
-    # etalon_liverpool_plus_lester = []
+# integers 265
+    # manhattan   ,    hamming
+    # start_time = time.time()
+    # print('timer started...')
+    # distances_integers_by_hausdorf = get_distances_between_sets_by_hausdorf(set_integers, names, 'manhattan')
+    # print(f'manhattan:')
+    # print(distances_integers_by_hausdorf)
+    # print("--- %s seconds ---" % (time.time() - start_time))
     #
-    # etalon_liverpool_plus_lester_bit_format = descriptors_liverpool_bit_format + descriptors_lester_bit_format
-    #
-    # for liverpool_value in range(len(descriptors_liverpool)):
-    #     etalon_liverpool_plus_lester.append(descriptors_liverpool[liverpool_value])
-    #
-    # for lester_value in range(len(descriptors_lester)):
-    #     etalon_liverpool_plus_lester.append(descriptors_lester[lester_value])
 
+# bits 256
+    # print()
+    # start_time = time.time()
+    # print('timer started...')
+    # distances_bits_by_hausdorf = get_distances_between_sets_by_hausdorf(set_bits, test_names, 'hamming')
+    # print(f'hamming:')
+    # print(distances_bits_by_hausdorf)
+    # print("--- %s seconds ---" % (time.time() - start_time))
 
-    # print(descriptors_liverpool_bit_format[0])
+# integers 16
+#     start_time = time.time()
+#     print('timer started...')
+#     distances_integers_cut_by_hausdorf = get_distances_between_sets_by_hausdorf(set_integers_cut, names, 'manhattan')
+#
+#     print(f'manhattan for cut:')
+#     print(distances_integers_cut_by_hausdorf)
+#     print("--- %s seconds ---" % (time.time() - start_time))
 
+    test = is_method_compare_correctly(set_integers_cut, names, 'manhattan')
+    print(test)
 
-    # converted_descriptor =
-
-    # print(len(converted_descriptor))
 
 
 # Press the green button in the gutter to run the script.
