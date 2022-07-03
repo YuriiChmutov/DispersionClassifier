@@ -10,6 +10,16 @@ from sklearn.cluster import KMeans
 from sklearn.cluster import kmeans_plusplus
 from scipy.linalg import hadamard
 import itertools
+from enum import Enum
+import skimage
+import matplotlib.pyplot as plt
+from PIL import Image, ImageOps
+from skimage.util import random_noise
+
+
+class DistanceType(Enum):
+    HAMMING = 1
+    MANHATTAN = 2
 
 
 # to convert number to bit array 8 -> [0, 0, 0, 0, 1, 0, 0, 0]
@@ -62,7 +72,7 @@ def convert_bit_format_descriptors_to_integers_format(descriptors_bit_format):
 
 # multiplication of the vector representation of the descriptor by the Hadamard matrix
 def converted_descriptor_by_adamar_matrix(descriptor, adamar_matrix):
-    result_array = []
+    # result_array = []
     # for i in range(len(descriptor)):
     #     sum = 0
     #     for j in range(len(descriptor)):
@@ -182,7 +192,7 @@ def cut_down_etalon_by_dispersions_indexes(descriptors, indexes):
 # were entered in the method parameters
 def cut_down_descriptor_by_dispersions_indexes(descriptor, indexes):
     shortcut_descriptor = []  # len 16 will be
-    for i in range(16):
+    for i in range(1):
         shortcut_descriptor.append(descriptor[indexes[i]])
     return shortcut_descriptor
 
@@ -192,7 +202,7 @@ def cut_down_descriptor_by_dispersions_indexes(descriptor, indexes):
 # method returns minimum distance for one descriptor. Planning to compare
 # one with array of descriptors
 def get_minimum_distance_for_descriptor_among_many(descriptor, many, distance_type):
-    if distance_type == 'manhattan':
+    if distance_type == DistanceType.MANHATTAN:
         min_distance = 100000
         for i in range(len(many)):
             distance_between_descriptors = manhattan_distance(descriptor, many[i])
@@ -200,7 +210,7 @@ def get_minimum_distance_for_descriptor_among_many(descriptor, many, distance_ty
                 min_distance = distance_between_descriptors
         return min_distance
 
-    if distance_type == 'hamming':
+    if distance_type == DistanceType.HAMMING:
         min_distance = 256
         for i in range(len(many)):
             distance_between_descriptors = my_hamming_distance(descriptor, many[i])
@@ -269,203 +279,482 @@ def manhattan_distance(a, b):
     # return np.sum(np.abs(arr1 - arr2))
 
 
+# compares each etalon with each another
+# [A, B, C] -> A:B, A:C, B:C
 def get_distances_between_sets_by_hausdorf(sets, names, distance_type):
     dictionary = {} # A-B : 95
     i = 0
     while i < len(sets):
         j = i + 1
         while j < len(sets):
-            tempA = get_minimum_distance_for_each_many_descriptors_among_many(sets[i], sets[j], distance_type)
-            print(tempA)
-            tempB = get_minimum_distance_for_each_many_descriptors_among_many(sets[j], sets[i], distance_type)
-            print(tempB)
-            max = get_maximum_between_two_arrays_of_minimums(tempA, tempB, names[i], names[j])
-            dictionary[f'{names[i]} - {names[j]}'] = max
+            # tempA = get_minimum_distance_for_each_many_descriptors_among_many(sets[i], sets[j], distance_type)
+            # print(tempA)
+            # tempB = get_minimum_distance_for_each_many_descriptors_among_many(sets[j], sets[i], distance_type)
+            # print(tempB)
+            # maximum = get_maximum_between_two_arrays_of_minimums(tempA, tempB, names[i], names[j])
+            dist = my_hausdorf(sets[i], names[i], sets[j], names[j], distance_type)
+            dictionary[f'{names[i]} - {names[j]}'] = dist
             j = j + 1
         i = i + 1
     return dictionary
 
 
-def get_index_of_closest_etalon_for_etalon(etalon, etalons_set, etalon_name, names, distance_type):
+# input etalon compares with set of etalons and returns index of closest etalon
+# A:A, A:B, A:C
+def get_index_of_closest_etalon_for_etalon_by_hausdorf(etalon, etalons_set, etalon_name, names, distance_type, dict):
     # if distance_type == 1:
-    list = []
+    list_of_distances = []
     for i in range(len(etalons_set)):
-        tempA = get_minimum_distance_for_each_many_descriptors_among_many(etalon, etalons_set[i], distance_type)
-        print(tempA)
-        tempB = get_minimum_distance_for_each_many_descriptors_among_many(etalons_set[i], etalon, distance_type)
-        print(tempB)
-        maximum = get_maximum_between_two_arrays_of_minimums(tempA, tempB, etalon_name, names[i])
-        print(f'{etalon_name} - {names[i]}: {maximum}')
-        list.append(maximum)
-    # test = min(dictionary, key=dictionary.get)
-    # print(type(min))
-    return list.index(min(list))
+        # tempA = get_minimum_distance_for_each_many_descriptors_among_many(etalon, etalons_set[i], distance_type)
+        # print(tempA)
+        # tempB = get_minimum_distance_for_each_many_descriptors_among_many(etalons_set[i], etalon, distance_type)
+        # print(tempB)
+        # maximum = get_maximum_between_two_arrays_of_minimums(tempA, tempB, etalon_name, names[i])
+
+        dist = my_hausdorf(etalon, etalon_name, etalons_set[i], names[i], distance_type)
+        print(f'{etalon_name} - {names[i]}: {dist}\n\n')
+
+        if f'{etalon_name} - {names[i]}' in dict:
+            dict[f'{etalon_name} - {names[i]}'] = dict[f'{etalon_name} - {names[i]}'] + dist
+        else:
+            dict[f'{etalon_name} - {names[i]}'] = dist
+
+        # TODO
+        list_of_distances.append(dist)
+    print()
+    print(f'My dic: {dict}')
+    print()
+    return list_of_distances.index(min(list_of_distances)), dict
 
 
-def is_method_compare_correctly(etalons, names, method):
+def my_hausdorf(etalon, etalon_name, etalon_to_compare, etlaon_to_compare_name, distance_type):
+    firstDistance = get_minimum_distance_for_each_many_descriptors_among_many(etalon, etalon_to_compare, distance_type)
+    print(firstDistance)
+    secondDistance = get_minimum_distance_for_each_many_descriptors_among_many(etalon_to_compare, etalon, distance_type)
+    print(secondDistance)
+    return get_maximum_between_two_arrays_of_minimums(firstDistance, secondDistance, etalon_name, etlaon_to_compare_name)
+
+
+def is_method_compare_correctly(etalons, noisy_etalons, names, method, dict):
     sum = 0
     for i in range(len(etalons)):
-        index = get_index_of_closest_etalon_for_etalon(etalons[i], etalons, names[i], names, method)
+        index, dict = get_index_of_closest_etalon_for_etalon_by_hausdorf(etalons[i], noisy_etalons, names[i], names, method, dict)
         print(f'Index of closest: {index}')
         if index == i:
             sum = sum + 1
+        print(f'{sum} / {len(etalons)}\n')
 
     if sum == len(etalons):
-        print(f'Method works correctly; {sum} / {len(etalons)}')
-        return True
+        print(f'Method works correctly; {sum} / {len(etalons)} = {sum/len(etalons)}')
     else:
-        print(f'{sum} / {len(etalons)}')
-        return False
+        print(f'{sum} / {len(etalons)} = {sum/len(etalons)}')
+
+    return sum/len(etalons), dict
+
+
+def add_noise(img, mean, sigma, X, Y):
+    # https://gist.github.com/Prasad9/28f6a2df8e8d463c6ddd040f4f6a028a
+    gaussian = np.random.normal(mean, sigma, (X, Y))  # np.zeros((224, 224), np.float32)
+
+    noisy_image = np.zeros(img.shape, np.float32)
+    # noisy_image = img
+
+    if len(img.shape) == 2:
+        noisy_image = img + gaussian
+    else:
+        noisy_image[:, :, 0] = img[:, :, 0] + gaussian
+        noisy_image[:, :, 1] = img[:, :, 1] + gaussian
+        noisy_image[:, :, 2] = img[:, :, 2] + gaussian
+
+    cv2.normalize(noisy_image, noisy_image, 0, 255, cv2.NORM_MINMAX, dtype=-1)
+    noisy_image = noisy_image.astype(np.uint8)
+
+    return noisy_image
+
+#https://www.programcreek.com/python/?CodeExample=add+gaussian+noise
+
+
+def add_noise1(img, mean, sigma):
+    gaussian = np.random.normal(mean, sigma, (img.shape[0], img.shape[1]))
+    noisy_image = np.zeros(img.shape, np.float32)
+
+    noisy_image[:, :, 0] = img[:, :, 0] + gaussian
+    noisy_image[:, :, 1] = img[:, :, 1] + gaussian
+    noisy_image[:, :, 2] = img[:, :, 2] + gaussian
+
+    # noisy_image = img + gaussian
+
+    cv2.normalize(noisy_image, noisy_image, 0, 255, cv2.NORM_MINMAX, dtype=-1)
+    noisy_image = noisy_image.astype(np.uint8)
+
 
 
 def main():
-    img_A = cv2.imread("Images/Leicter_more_white.jpg")
-    img_B = cv2.imread("Images/Liverpool_more_white.jpg")
-    img_C = cv2.imread("Images/ManUnited.jpg")
-    img_D = cv2.imread("Images/Milan.jpg")
-    img_E = cv2.imread("Images/Raingers.jpg")
-    img_B_side = cv2.imread("Images/Liverpool_more_white_rotate_30.jpg")
+    # https://stackoverflow.com/questions/12201577/how-can-i-convert-an-rgb-image-into-grayscale-in-python
+    # img = Image.open('Images/Chelsea.jpg').convert('L')
+    # test = Image.open("Images/ManchesterUnited.jpg")
+    # test.show()
+    #
+    # test = ImageOps.grayscale(test)
+    # gray_image.show()
 
-    orb = cv2.ORB_create(nfeatures=500)
-
-    keypoints_etalon_A, descriptors_etalon_A = orb.detectAndCompute(img_A, None)
-    keypoints_etalon_B, descriptors_etalon_B = orb.detectAndCompute(img_B, None)
-    keypoints_etalon_C, descriptors_etalon_C = orb.detectAndCompute(img_C, None)
-    keypoints_etalon_D, descriptors_etalon_D = orb.detectAndCompute(img_D, None)
-    keypoints_etalon_E, descriptors_etalon_E = orb.detectAndCompute(img_E, None)
-    keypoints_etalon_B_side, descriptors_etalon_B_side = orb.detectAndCompute(img_B_side, None)
-
-    # img = cv2.drawKeypoints(img_liverpool, keypoints_liverpool, None)
-    # cv2.imshow("leicester", img)
+    # test_image = ImageOps.grayscale(test)
+    # img.save('GreyImages/Chelsea.jpg')
+    # cv2.imshow("test", 'greyscale.jpg')
+    # cv2.imshow("test", test_image)
     # cv2.waitKey(0)
 
-    descriptors_etalon_B_side_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_B_side)
-    descriptors_etalon_A_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_A)
-    descriptors_etalon_B_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_B)
-    descriptors_etalon_C_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_C)
-    descriptors_etalon_D_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_D)
-    descriptors_etalon_E_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_E)
+    res = 0
+    loop = 10
+    test_dict = {}
 
-    descriptors_etalon_A_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_A_bit_format)
-    # descriptors_etalon_A_integers = convert_descriptors_to_whole_numbers(descriptors_etalon_B_side_bit_format)
-    descriptors_etalon_B_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_B_bit_format)
-    descriptors_etalon_C_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_C_bit_format)
-    descriptors_etalon_D_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_D_bit_format)
-    descriptors_etalon_E_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_E_bit_format)
+    for x in range(loop):
+
+        img_A = cv2.imread("Images/Leicester.jpg")
+        img_B = cv2.imread("Images/Brentford.jpg")
+        img_C = cv2.imread("Images/ManchesterUnited.jpg")
+        img_D = cv2.imread("Images/Rangers.jpg")
+        img_E = cv2.imread("Images/Chelsea.jpg")
+
+        # img_A = Image.open("Images/Leicester.jpg")
+        # img_B = Image.open("Images/Brentford.jpg")
+        # img_C = Image.open("Images/ManUnited.jpg")
+        # img_D = Image.open("Images/Rangers.jpg")
+        # img_E = Image.open("Images/Chelsea.jpg")
+
+        img_grey_A = cv2.imread('GreyImages/Leicester.jpg')
+        img_grey_B = cv2.imread('GreyImages/Brentford.jpg')
+        img_grey_C = cv2.imread('GreyImages/ManchesterUnited.jpg')
+        img_grey_D = cv2.imread('GreyImages/Rangers.jpg')
+        img_grey_E = cv2.imread('GreyImages/Chelsea.jpg')
+
+        # img_grey_A = ImageOps.grayscale(img_A)
+        # img_grey_A.save('GreyImages/Leicester.jpg')
+        #
+        # img_grey_B = ImageOps.grayscale(img_B)
+        # img_grey_B.save('GreyImages/Brentford.jpg')
+        #
+        # img_grey_C = ImageOps.grayscale(img_C)
+        # img_grey_C.save('GreyImages/ManUnited.jpg')
+        #
+        # img_grey_D = ImageOps.grayscale(img_D)
+        # img_grey_D.save('GreyImages/Rangers.jpg')
+        #
+        # img_grey_E = ImageOps.grayscale(img_E)
+        # img_grey_E.save('GreyImages/Chelsea.jpg')
+
+        # mean = 0
+        # # var = 20
+        # sigma = 20
+        # gaussian = np.random.normal(mean, sigma, (511, 555)) #  np.zeros((224, 224), np.float32)
+        #
+        # noisy_image = np.zeros(img.shape, np.float32)
+        #
+        # # if len(img.shape) == 2:
+        # #     noisy_image = img + gaussian
+        # # else:
+        #
+        #
+        # # for i in range(6):
+        # if len(img.shape) == 2:
+        #     noisy_image = img + gaussian
+        # else:
+        #     noisy_image[:, :, 0] = img[:, :, 0] + gaussian
+        #     noisy_image[:, :, 1] = img[:, :, 1] + gaussian
+        #     noisy_image[:, :, 2] = img[:, :, 2] + gaussian
+        # cv2.normalize(noisy_image, noisy_image, 0, 255, cv2.NORM_MINMAX, dtype=-1)
 
 
-    descriptors_combined_etalon_integers = \
-        descriptors_etalon_A_integers + descriptors_etalon_B_integers +\
-        descriptors_etalon_C_integers + descriptors_etalon_D_integers +\
-        descriptors_etalon_E_integers
+        # cv2.imshow("img", noisy_image_A)
+        # cv2.waitKey(0)
 
-    print(f'Etalon len = {len(descriptors_combined_etalon_integers)}')
-    print()
+        sigma = 10
 
-    # print(get_list_of_dispersions(descriptors_combined_etalon_integers))
+        noisy_img_A = add_noise(img_grey_A, 0, sigma, 320, 327)
+        noisy_img_B = add_noise(img_grey_B, 0, sigma, 324, 328)
+        noisy_img_C = add_noise(img_grey_C, 0, sigma, 324, 331)
+        noisy_img_D = add_noise(img_grey_D, 0, sigma, 315, 323)
+        noisy_img_E = add_noise(img_grey_E, 0, sigma, 320, 320)
 
-    list_of_dispersions = get_list_of_dispersions(descriptors_combined_etalon_integers, True)
-    print(f'List of dispersions len = {len(list_of_dispersions)}')
-    print(list_of_dispersions)
-    print()
+        # noisy_img_A = cv2.imread("Images/Leicester.jpg")
+        # noisy_img_B = cv2.imread("Images/Brentford.jpg")
+        # noisy_img_C = cv2.imread("Images/ManUnited.jpg")
+        # noisy_img_D = cv2.imread("Images/Rangers.jpg")
+        # noisy_img_E = cv2.imread("Images/Chelsea.jpg")
 
-    max_dispersion = max(list_of_dispersions)
-    list_of_dispersions_divided_by_max = divide_list_elements_by_number(list_of_dispersions, max_dispersion)
-    # print(list_of_dispersions)
-    print(list_of_dispersions_divided_by_max)
+        # cv2.imshow("img", noisy_img_A)
+        # cv2.waitKey(0)
 
-    dictionary_of_dispersions_divided_by_max = convert_list_to_dictionary(list_of_dispersions_divided_by_max)
-    print(dictionary_of_dispersions_divided_by_max)
+        orb = cv2.ORB_create(nfeatures=500)
 
-    sorted_dictionary_of_dispersions_divided_by_max = sort_dictionary_by_value(dictionary_of_dispersions_divided_by_max)
-    print(sorted_dictionary_of_dispersions_divided_by_max)
+        keypoints_etalon_A, descriptors_etalon_A = orb.detectAndCompute(img_A, None)
+        keypoints_etalon_B, descriptors_etalon_B = orb.detectAndCompute(img_B, None)
+        keypoints_etalon_C, descriptors_etalon_C = orb.detectAndCompute(img_C, None)
+        keypoints_etalon_D, descriptors_etalon_D = orb.detectAndCompute(img_D, None)
+        keypoints_etalon_E, descriptors_etalon_E = orb.detectAndCompute(img_E, None)
 
-    # write_dictionary_to_csv(sorted_dictionary_of_dispersions_divided_by_max, 'без_квадратов')
-    # write_dictionary_to_csv(sorted_dictionary_of_dispersions_divided_by_max, 'с_квадратами')
+        noisy_keypoints_etalon_A, noisy_descriptors_etalon_A = orb.detectAndCompute(noisy_img_A, None)
+        noisy_keypoints_etalon_B, noisy_descriptors_etalon_B = orb.detectAndCompute(noisy_img_B, None)
+        noisy_keypoints_etalon_C, noisy_descriptors_etalon_C = orb.detectAndCompute(noisy_img_C, None)
+        noisy_keypoints_etalon_D, noisy_descriptors_etalon_D = orb.detectAndCompute(noisy_img_D, None)
+        noisy_keypoints_etalon_E, noisy_descriptors_etalon_E = orb.detectAndCompute(noisy_img_E, None)
 
-    print()
-    top_16_sorted_dictionary_of_dispersions_divided_by_max = \
-        dict(itertools.islice(sorted_dictionary_of_dispersions_divided_by_max.items(), 16))
+        # noisy_keypoints_etalon_A, noisy_descriptors_etalon_A = orb.detectAndCompute(cv2.imread("Images/Leicester.jpg"), None)
+        # noisy_keypoints_etalon_B, noisy_descriptors_etalon_B = orb.detectAndCompute(cv2.imread("Images/Brentford.jpg"), None)
+        # noisy_keypoints_etalon_C, noisy_descriptors_etalon_C = orb.detectAndCompute(cv2.imread("Images/ManUnited.jpg"), None)
+        # noisy_keypoints_etalon_D, noisy_descriptors_etalon_D = orb.detectAndCompute(cv2.imread("Images/Rangers.jpg"), None)
+        # noisy_keypoints_etalon_E, noisy_descriptors_etalon_E = orb.detectAndCompute(cv2.imread("Images/Chelsea.jpg"), None)
 
-    top_16_indexes = list(top_16_sorted_dictionary_of_dispersions_divided_by_max.keys())
-    print(top_16_indexes)
+
+
+        # img = cv2.drawKeypoints(noisy_img_A, noisy_keypoints_etalon_A, None)
+        # cv2.imshow("leicester", img)
+        # cv2.waitKey(0)
+
+        # img1 = cv2.drawKeypoints(noisy_img_A, noisy_keypoints_etalon_A, None)
+        # cv2.imshow("leicester", img1)
+        # cv2.waitKey(0)
+
+        # cv2.imshow("", img_grey_A)
+        # cv2.waitKey(0)
+        # cv2.imshow("", noisy_img_A)
+        # cv2.waitKey(0)
+
+        descriptors_etalon_A_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_A)
+        descriptors_etalon_B_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_B)
+        descriptors_etalon_C_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_C)
+        descriptors_etalon_D_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_D)
+        descriptors_etalon_E_bit_format = convert_32_descriptors_to_256_bit(descriptors_etalon_E)
+
+        noisy_descriptors_etalon_A_bit_format = convert_32_descriptors_to_256_bit(noisy_descriptors_etalon_A)
+        noisy_descriptors_etalon_B_bit_format = convert_32_descriptors_to_256_bit(noisy_descriptors_etalon_B)
+        noisy_descriptors_etalon_C_bit_format = convert_32_descriptors_to_256_bit(noisy_descriptors_etalon_C)
+        noisy_descriptors_etalon_D_bit_format = convert_32_descriptors_to_256_bit(noisy_descriptors_etalon_D)
+        noisy_descriptors_etalon_E_bit_format = convert_32_descriptors_to_256_bit(noisy_descriptors_etalon_E)
+
+        descriptors_etalon_A_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_A_bit_format)
+        descriptors_etalon_B_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_B_bit_format)
+        descriptors_etalon_C_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_C_bit_format)
+        descriptors_etalon_D_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_D_bit_format)
+        descriptors_etalon_E_integers = convert_bit_format_descriptors_to_integers_format(descriptors_etalon_E_bit_format)
+
+        print()
+        print(len(descriptors_etalon_A))
+        print(len(descriptors_etalon_B))
+        print(len(descriptors_etalon_C))
+        print(len(descriptors_etalon_D))
+        print(len(descriptors_etalon_E))
+
+        noisy_descriptors_etalon_A_integers = convert_bit_format_descriptors_to_integers_format(noisy_descriptors_etalon_A_bit_format)
+        noisy_descriptors_etalon_B_integers = convert_bit_format_descriptors_to_integers_format(noisy_descriptors_etalon_B_bit_format)
+        noisy_descriptors_etalon_C_integers = convert_bit_format_descriptors_to_integers_format(noisy_descriptors_etalon_C_bit_format)
+        noisy_descriptors_etalon_D_integers = convert_bit_format_descriptors_to_integers_format(noisy_descriptors_etalon_D_bit_format)
+        noisy_descriptors_etalon_E_integers = convert_bit_format_descriptors_to_integers_format(noisy_descriptors_etalon_E_bit_format)
+
+        descriptors_combined_etalon_integers = \
+            descriptors_etalon_A_integers + descriptors_etalon_B_integers +\
+            descriptors_etalon_C_integers + descriptors_etalon_D_integers +\
+            descriptors_etalon_E_integers
+
+        noisy_descriptors_combined_etalon_integers = \
+            noisy_descriptors_etalon_A_integers + noisy_descriptors_etalon_B_integers + \
+            noisy_descriptors_etalon_C_integers + noisy_descriptors_etalon_D_integers + \
+            noisy_descriptors_etalon_E_integers
+
+        print()
+        print(len(noisy_descriptors_etalon_A_integers))
+        print(len(noisy_descriptors_etalon_B_integers))
+        print(len(noisy_descriptors_etalon_C_integers))
+        print(len(noisy_descriptors_etalon_D_integers))
+        print(len(noisy_descriptors_etalon_E_integers))
+
+        print(f'Etalon len = {len(descriptors_combined_etalon_integers)}')
+        print()
+        print(f'Noisy etalon len = {len(noisy_descriptors_combined_etalon_integers)}')
+        print()
+
+
+
+        # print(get_list_of_dispersions(descriptors_combined_etalon_integers))
+
+        list_of_dispersions = get_list_of_dispersions(descriptors_combined_etalon_integers, True)
+        print(f'List of dispersions len = {len(list_of_dispersions)}')
+        print(list_of_dispersions)
+        print()
+
+        max_dispersion = max(list_of_dispersions)
+        list_of_dispersions_divided_by_max = divide_list_elements_by_number(list_of_dispersions, max_dispersion)
+        # print(list_of_dispersions)
+        print(list_of_dispersions_divided_by_max)
+
+        dictionary_of_dispersions_divided_by_max = convert_list_to_dictionary(list_of_dispersions_divided_by_max)
+        print(dictionary_of_dispersions_divided_by_max)
+
+        sorted_dictionary_of_dispersions_divided_by_max = sort_dictionary_by_value(dictionary_of_dispersions_divided_by_max)
+        print(sorted_dictionary_of_dispersions_divided_by_max)
+
+        # write_dictionary_to_csv(sorted_dictionary_of_dispersions_divided_by_max, 'без_квадратов')
+        # write_dictionary_to_csv(sorted_dictionary_of_dispersions_divided_by_max, 'с_квадратами')
+
+        print()
+        top_sorted_dictionary_of_dispersions_divided_by_max = \
+            dict(itertools.islice(sorted_dictionary_of_dispersions_divided_by_max.items(), 1, 2))
+
+        top_dispersion_indexes = list(top_sorted_dictionary_of_dispersions_divided_by_max.keys())
+        print(top_dispersion_indexes)
+
+        print('-' * 100)
+        print()
+
+
+        descriptors_etalon_A_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(descriptors_etalon_A_integers, top_dispersion_indexes)
+        descriptors_etalon_B_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(descriptors_etalon_B_integers, top_dispersion_indexes)
+        descriptors_etalon_C_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(descriptors_etalon_C_integers, top_dispersion_indexes)
+        descriptors_etalon_D_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(descriptors_etalon_D_integers, top_dispersion_indexes)
+        descriptors_etalon_E_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(descriptors_etalon_E_integers, top_dispersion_indexes)
+
+        noisy_descriptors_etalon_A_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(noisy_descriptors_etalon_A_integers, top_dispersion_indexes)
+        noisy_descriptors_etalon_B_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(noisy_descriptors_etalon_B_integers, top_dispersion_indexes)
+        noisy_descriptors_etalon_C_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(noisy_descriptors_etalon_C_integers, top_dispersion_indexes)
+        noisy_descriptors_etalon_D_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(noisy_descriptors_etalon_D_integers, top_dispersion_indexes)
+        noisy_descriptors_etalon_E_integers_cut = \
+            cut_down_etalon_by_dispersions_indexes(noisy_descriptors_etalon_E_integers, top_dispersion_indexes)
+
+        print(len(descriptors_etalon_A_integers[0]))
+        print(len(descriptors_etalon_A_integers_cut[0]))
+        #
+        # print(len(descriptors_etalon_B_integers))
+        # print(len(descriptors_etalon_B_integers_cut))
+        #
+        # print(len(descriptors_etalon_C_integers))
+        # print(len(descriptors_etalon_C_integers_cut))
+        #
+        # print(len(descriptors_etalon_D_integers))
+        # print(len(descriptors_etalon_D_integers_cut))
+        #
+        # print(len(descriptors_etalon_E_integers))
+        # print(len(descriptors_etalon_E_integers_cut))
+
+        print('-' * 100)
+        print()
+
+        set_bits = [
+            descriptors_etalon_A_bit_format,
+            descriptors_etalon_B_bit_format,
+            descriptors_etalon_C_bit_format,
+            descriptors_etalon_D_bit_format,
+            descriptors_etalon_E_bit_format
+        ]
+
+        noisy_set_bits = [
+            noisy_descriptors_etalon_A_bit_format,
+            noisy_descriptors_etalon_B_bit_format,
+            noisy_descriptors_etalon_C_bit_format,
+            noisy_descriptors_etalon_D_bit_format,
+            noisy_descriptors_etalon_E_bit_format
+        ]
+
+        set_integers = [
+            descriptors_etalon_A_integers,
+            descriptors_etalon_B_integers,
+            descriptors_etalon_C_integers,
+            descriptors_etalon_D_integers,
+            descriptors_etalon_E_integers
+        ]
+
+        noisy_set_integers = [
+            noisy_descriptors_etalon_A_integers,
+            noisy_descriptors_etalon_B_integers,
+            noisy_descriptors_etalon_C_integers,
+            noisy_descriptors_etalon_D_integers,
+            noisy_descriptors_etalon_E_integers
+        ]
+
+        set_integers_cut = [
+            descriptors_etalon_A_integers_cut,
+            descriptors_etalon_B_integers_cut,
+            descriptors_etalon_C_integers_cut,
+            descriptors_etalon_D_integers_cut,
+            descriptors_etalon_E_integers_cut
+        ]
+
+        noisy_set_integers_cut = [
+            noisy_descriptors_etalon_A_integers_cut,
+            noisy_descriptors_etalon_B_integers_cut,
+            noisy_descriptors_etalon_C_integers_cut,
+            noisy_descriptors_etalon_D_integers_cut,
+            noisy_descriptors_etalon_E_integers_cut
+        ]
+
+        names = ["A", "B", "C", "D", "E"]
+        # test_names = ["A", "B"]
+
+    # integers 265
+        # manhattan   ,    hamming
+        # start_time = time.time()
+        # print('timer started...')
+        # distances_integers_by_hausdorf = get_distances_between_sets_by_hausdorf(set_integers, names, DistanceType.MANHATTAN)
+        # print(f'manhattan:')
+        # print(distances_integers_by_hausdorf)
+        # print("--- %s seconds ---" % (time.time() - start_time))
+
+
+    # bits 256
+    #     print()
+    #     start_time = time.time()
+    #     print('timer started...')
+    #     distances_bits_by_hausdorf = get_distances_between_sets_by_hausdorf(set_bits, test_names, DistanceType.HAMMING)
+    #     print(f'hamming:')
+    #     print(distances_bits_by_hausdorf)
+    #     print("--- %s seconds ---" % (time.time() - start_time))
+
+
+    # integers 16
+    #     start_time = time.time()
+    #     print('timer started...')
+    #     distances_integers_cut_by_hausdorf = \
+    #         get_distances_between_sets_by_hausdorf(set_integers_cut, names, DistanceType.MANHATTAN)
+    #
+    #     print(f'manhattan for cut:')
+    #     print(distances_integers_cut_by_hausdorf)
+    #     print("--- %s seconds ---" % (time.time() - start_time))
+
+
+        # test1 = is_method_compare_correctly(set_bits, noisy_set_bits, names, DistanceType.HAMMING)
+        test2 = is_method_compare_correctly(set_integers, noisy_set_integers, names, DistanceType.MANHATTAN, test_dict)
+        # test3, test_dict = is_method_compare_correctly(set_integers_cut, noisy_set_integers_cut, names, DistanceType.MANHATTAN, test_dict)
+
+        # print(f'1-st method (BX), accurance = {test1}\n')
+        print(f'2-nd method (BXY), accurance = {test2}\n')
+        # print(f'3-rd method (BXY16), accurance = {test3}')
+
+        res = res + test2
 
     print('-' * 100)
-    print()
 
-    descriptors_etalon_A_integers_cut = \
-        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_A_integers, top_16_indexes)
-    descriptors_etalon_B_integers_cut = \
-        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_B_integers, top_16_indexes)
-    descriptors_etalon_C_integers_cut = \
-        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_C_integers, top_16_indexes)
-    descriptors_etalon_D_integers_cut = \
-        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_D_integers, top_16_indexes)
-    descriptors_etalon_E_integers_cut = \
-        cut_down_etalon_by_dispersions_indexes(descriptors_etalon_E_integers, top_16_indexes)
+    new_dict = {k: v / loop for total in (sum(test_dict.values()),) for k, v in test_dict.items()}
 
-    set_bits = [
-        descriptors_etalon_A_bit_format,
-        descriptors_etalon_B_bit_format,
-        descriptors_etalon_C_bit_format,
-        descriptors_etalon_D_bit_format,
-        descriptors_etalon_E_bit_format
-    ]
+    print(res / loop)
+    print(new_dict)
 
-    set_integers = [
-        descriptors_etalon_A_integers,
-        descriptors_etalon_B_integers,
-        descriptors_etalon_C_integers,
-        descriptors_etalon_D_integers,
-        descriptors_etalon_E_integers
-    ]
-
-    set_integers_cut = [
-        descriptors_etalon_A_integers_cut,
-        descriptors_etalon_B_integers_cut,
-        descriptors_etalon_C_integers_cut,
-        descriptors_etalon_D_integers_cut,
-        descriptors_etalon_E_integers_cut
-    ]
-
-    names = ["A", "B", "C", "D", "E"]
-    test_names = ["A", "B"]
-
-# integers 265
-    # manhattan   ,    hamming
-    # start_time = time.time()
-    # print('timer started...')
-    # distances_integers_by_hausdorf = get_distances_between_sets_by_hausdorf(set_integers, names, 'manhattan')
-    # print(f'manhattan:')
-    # print(distances_integers_by_hausdorf)
-    # print("--- %s seconds ---" % (time.time() - start_time))
-    #
-
-# bits 256
-    # print()
-    # start_time = time.time()
-    # print('timer started...')
-    # distances_bits_by_hausdorf = get_distances_between_sets_by_hausdorf(set_bits, test_names, 'hamming')
-    # print(f'hamming:')
-    # print(distances_bits_by_hausdorf)
-    # print("--- %s seconds ---" % (time.time() - start_time))
-
-# integers 16
-#     start_time = time.time()
-#     print('timer started...')
-#     distances_integers_cut_by_hausdorf = get_distances_between_sets_by_hausdorf(set_integers_cut, names, 'manhattan')
-#
-#     print(f'manhattan for cut:')
-#     print(distances_integers_cut_by_hausdorf)
-#     print("--- %s seconds ---" % (time.time() - start_time))
-
-    test = is_method_compare_correctly(set_integers_cut, names, 'manhattan')
-    print(test)
-
+    # cv2.waitKey(0)
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     main()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+
+
+
+
+
